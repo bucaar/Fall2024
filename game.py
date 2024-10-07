@@ -12,10 +12,26 @@ MAX_TUBES_PER_BUILDING = 5
 MAX_TELEPORTERS_PER_BUILDING = 1
 MAX_PASSENGERS_PER_POD = 10
 
+TUBE_COST_PER_KM = .1
+TELEPORTER_COST = 5000
+POD_COST = 1000
+POD_DESTROY_GAIN = 750
+
 MODULE_TYPES = 20
 
 SPEED_SCORE = 50
 BALANCING_SCORE = 50
+
+# TUBE | UPGRADE | TELEPORT | POD | DESTROY | WAIT
+def turn(city: "City"):
+    debug("tube 0->1", city.can_build_tube(0, 1))
+    debug("tube 1->0", city.can_build_tube(1, 0))
+    debug("tube 1->2", city.can_build_tube(1, 2))
+    tube_action(0, 1)
+    debug("teleporter 0->1", city.can_build_teleporter(0, 1))
+    debug("teleporter 1->0", city.can_build_teleporter(1, 0))
+    debug("teleporter 1->2", city.can_build_teleporter(1, 2))
+    teleport_action(0, 1)
 
 def tube_action(building_1_id: int, building_2_id: int):
     turn_actions.append(f"TUBE {building_1_id} {building_2_id}")
@@ -35,13 +51,6 @@ def destroy_action(pod_id: int):
 
 def wait_action():
     turn_actions.append(f"WAIT")
-
-# TUBE | UPGRADE | TELEPORT | POD | DESTROY | WAIT
-def turn(city: "City"):
-    debug("2 -> 3", city.can_build_tube(2, 3)) 
-    debug("3 -> 2", city.can_build_tube(3, 2)) 
-    tube_action(2, 3)
-    tube_action(3, 2)
 
 def dist_sq(x1: int, y1: int, x2: int, y2: int) -> int:
     return (x2 - x1) ** 2 + (y2 - y1) ** 2
@@ -72,9 +81,9 @@ def segments_intersect(x1: int, y1: int, x2: int, y2: int, x3: int, y3: int, x4:
     return orientation(x1, y1, x2, y2, x3, y3) * orientation(x1, y1, x2, y2, x4, y4) < 0 and \
         orientation(x3, y3, x4, y4, x1, y1) * orientation(x3, y3, x4, y4, x2, y2) < 0
 
-def get_tube_cost(x1: int, y1: int, x2: int, y2: int) -> int:
+def get_tube_cost(x1: int, y1: int, x2: int, y2: int, capacity: int) -> int:
     tube_dist = dist(x1, y1, x2, y2)
-    return math.floor(tube_dist / .1)
+    return math.floor(tube_dist / TUBE_COST_PER_KM) * capacity
 
 def debug(*args):
     for arg in args + ("\n",):
@@ -139,14 +148,6 @@ class City:
         if building_2_id in self.tubes_by_building and len(self.tubes_by_building[building_2_id]) >= MAX_TUBES_PER_BUILDING:
             # Building 2 has too many tubes
             return False
-        
-        if building_1_id in self.teleporters_by_building and len(self.teleporters_by_building[building_1_id]) >= MAX_TELEPORTERS_PER_BUILDING:
-            # Building 1 already has a teleporter
-            return False
-        
-        if building_2_id in self.teleporters_by_building and len(self.teleporters_by_building[building_2_id]) >= MAX_TELEPORTERS_PER_BUILDING:
-            # Building 2 already has a teleporter
-            return False
 
         # Make sure this tube wouldn't intersect another building
         building_1 = self.buildings[building_1_id]
@@ -187,6 +188,17 @@ class City:
         # No reason why we couldn't build this tube!
         return True
 
+    def can_build_teleporter(self, building_1_id: int, building_2_id: int) -> bool:
+        if building_1_id in self.teleporters_by_building and len(self.teleporters_by_building[building_1_id]) >= MAX_TELEPORTERS_PER_BUILDING:
+            # Building 1 already has a teleporter
+            return False
+        
+        if building_2_id in self.teleporters_by_building and len(self.teleporters_by_building[building_2_id]) >= MAX_TELEPORTERS_PER_BUILDING:
+            # Building 2 already has a teleporter
+            return False
+
+        # No reason why we couldn't build this teleporter!
+        return True
 
 def read():
     line = input()

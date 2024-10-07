@@ -3,7 +3,7 @@ import sys
 import math
 import time
 
-ECHO_INPUT = True
+ECHO_INPUT = False
 
 MONTHS = 20
 DAYS_PER_MONTH = 20
@@ -19,7 +19,8 @@ BALANCING_SCORE = 50
 
 # TUBE | UPGRADE | TELEPORT | POD | DESTROY | WAIT
 def turn(city: "City"):
-    debug("2 -> 4", city.can_build_tube(2, 4))
+    debug("2 -> 4", city.can_build_tube(2, 4)) 
+    debug("4 -> 2", city.can_build_tube(4, 2)) 
     return "TUBE 2 4"
 
 def dist_sq(x1: int, y1: int, x2: int, y2: int) -> int:
@@ -101,6 +102,8 @@ class City:
     modules: dict[int, Module] = field(default_factory=dict)
     buildings: dict[int, LandingPod | Module] = field(default_factory=dict)
     buildings_by_coords: dict[tuple[int, int], LandingPod | Module] = field(default_factory=dict)
+    buildings_by_x: dict[int, list[LandingPod | Module]] = field(default_factory=dict)
+    buildings_by_y: dict[int, list[LandingPod | Module]] = field(default_factory=dict)
     tubes_by_building: dict[int, list[Tube]] = field(default_factory=dict)
     teleporters_by_building: dict[int, list[Teleporter]] = field(default_factory=dict)
 
@@ -131,10 +134,24 @@ class City:
 
         x1, y1 = building_1.x, building_1.y
         x2, y2 = building_2.x, building_2.y
-        for sx, sy in segment_intervals(x1, y1, x2, y2):
-            if (sx, sy) in self.buildings_by_coords:
-                # There is a building at this coord
-                return False
+        dx = x2 - x1
+        dy = y2 - y1
+        # If dx or dy is 0, it is probably more efficient to only check for buildings on that x/y band
+        if dx == 0:
+            for building in self.buildings_by_x[x1]:
+                if building.y > building_1.y and building.y < building_2.y or \
+                    building.y > building_2.y and building.y < building_1.y:
+                    return False
+        elif dy == 0:
+            for building in self.buildings_by_y[y1]:
+                if building.x > building_1.x and building.x < building_2.x or \
+                    building.x > building_2.x and building.x < building_1.x:
+                    return False
+        else:
+            for sx, sy in segment_intervals(x1, y1, x2, y2):
+                if (sx, sy) in self.buildings_by_coords:
+                    # There is a building at this coord
+                    return False
 
         # Make sure we wouldn't be intersecting with any other existing tube
         # TODO: Can this be improved instead of checking with every other existing tube?
@@ -158,10 +175,12 @@ def read():
     return line
 
 # game loop
-landing_pads = {}
-modules = {}
-buildings = {}
-buildings_by_coords = {}
+landing_pads: dict[int, LandingPod] = {}
+modules: dict[int, Module] = {}
+buildings: dict[int, LandingPod | Module] = {}
+buildings_by_coords: dict[tuple[int, int], LandingPod | Module] = {}
+buildings_by_x: dict[int, list[LandingPod | Module]] = {}
+buildings_by_y: dict[int, list[LandingPod | Module]] = {}
 while True:
     resources = int(read())
     city = City(resources)
@@ -169,14 +188,8 @@ while True:
     city.modules = modules
     city.buildings = buildings
     city.buildings_by_coords = buildings_by_coords
-
-    # tubes: dict[tuple[int, int], Tube] = {}
-    # teleporters: dict[tuple[int, int], Teleporter] = {}
-    # pods: dict[int, Pod] = {}
-    # landing_pads: dict[int, LandingPod] = {}
-    # modules: dict[int, Module] = {}
-
-    # buildings_by_coords: dict[tuple[int, int], LandingPod | Module] = {}
+    city.buildings_by_x = buildings_by_x
+    city.buildings_by_y = buildings_by_y
 
     num_travel_routes = int(read())
     for i in range(num_travel_routes):
@@ -225,13 +238,24 @@ while True:
             city.landing_pads[building_id] = landing_pad
             city.buildings[building_id] = landing_pad
             city.buildings_by_coords[(x, y)] = landing_pad
+            if x not in city.buildings_by_x:
+                city.buildings_by_x[x] = []
+            city.buildings_by_x[x].append(landing_pad)
+            if y not in city.buildings_by_y:
+                city.buildings_by_y[y] = []
+            city.buildings_by_y[y].append(landing_pad)
         else:
             building_id, x, y = building_attributes
             module = Module(module_type, building_id, x, y)
             city.modules[building_id] = module
             city.buildings[building_id] = module
             city.buildings_by_coords[(x, y)] = module
-
+            if x not in city.buildings_by_x:
+                city.buildings_by_x[x] = []
+            city.buildings_by_x[x].append(module)
+            if y not in city.buildings_by_y:
+                city.buildings_by_y[y] = []
+            city.buildings_by_y[y].append(module)
 
     start_time = time.time()
     output = turn(city)

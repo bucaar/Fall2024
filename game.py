@@ -17,11 +17,31 @@ MODULE_TYPES = 20
 SPEED_SCORE = 50
 BALANCING_SCORE = 50
 
+def tube_action(building_1_id: int, building_2_id: int):
+    turn_actions.append(f"TUBE {building_1_id} {building_2_id}")
+
+def upgrade_action(building_1_id: int, building_2_id: int):
+    turn_actions.append(f"UPGRADE {building_1_id} {building_2_id}")
+
+def teleport_action(building_entrance_id: int, building_exit_id: int):
+    turn_actions.append(f"TELEPORT {building_entrance_id} {building_exit_id}")
+
+def pod_action(pod_id: int, *building_ids: int):
+    buildings = " ".join(building_ids)
+    turn_actions.append(f"POD {pod_id} {buildings}")
+
+def destroy_action(pod_id: int):
+    turn_actions.append(f"DESTROY {pod_id}")
+
+def wait_action():
+    turn_actions.append(f"WAIT")
+
 # TUBE | UPGRADE | TELEPORT | POD | DESTROY | WAIT
 def turn(city: "City"):
-    debug("2 -> 4", city.can_build_tube(2, 4)) 
-    debug("4 -> 2", city.can_build_tube(4, 2)) 
-    return "TUBE 2 4"
+    debug("2 -> 3", city.can_build_tube(2, 3)) 
+    debug("3 -> 2", city.can_build_tube(3, 2)) 
+    tube_action(2, 3)
+    tube_action(3, 2)
 
 def dist_sq(x1: int, y1: int, x2: int, y2: int) -> int:
     return (x2 - x1) ** 2 + (y2 - y1) ** 2
@@ -181,6 +201,7 @@ buildings: dict[int, LandingPod | Module] = {}
 buildings_by_coords: dict[tuple[int, int], LandingPod | Module] = {}
 buildings_by_x: dict[int, list[LandingPod | Module]] = {}
 buildings_by_y: dict[int, list[LandingPod | Module]] = {}
+turn_actions: list[str] = []
 while True:
     resources = int(read())
     city = City(resources)
@@ -258,8 +279,11 @@ while True:
             city.buildings_by_y[y].append(module)
 
     start_time = time.time()
-    output = turn(city)
+    turn(city)
     end_time = time.time()
+
+    output = ";".join(turn_actions)
+    turn_actions.clear()
 
     print(output)
     debug("Time elapsed:", end_time - start_time)

@@ -257,6 +257,7 @@ buildings_by_x: dict[int, list[LandingPod | Module]] = {}
 buildings_by_y: dict[int, list[LandingPod | Module]] = {}
 turn_actions: list[str] = []
 while True:
+    start_time = time.time()
     resources = int(read())
     city = City(resources)
     city.landing_pads = landing_pads
@@ -331,6 +332,8 @@ while True:
             if y not in city.buildings_by_y:
                 city.buildings_by_y[y] = []
             city.buildings_by_y[y].append(module)
+    end_time = time.time()
+    debug("Setup time elapsed (ms):", (end_time - start_time) * 1000)
 
     start_time = time.time()
     turn(city)
@@ -340,4 +343,4 @@ while True:
     turn_actions.clear()
 
     print(output)
-    debug("Time elapsed:", end_time - start_time)
+    debug("Turn time elapsed (ms):", (end_time - start_time) * 1000)

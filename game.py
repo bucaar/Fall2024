@@ -3,6 +3,8 @@ import sys
 import math
 import time
 
+ECHO_INPUT = True
+
 MONTHS = 20
 DAYS_PER_MONTH = 20
 
@@ -15,68 +17,27 @@ MODULE_TYPES = 20
 SPEED_SCORE = 50
 BALANCING_SCORE = 50
 
-# City(
-#   resources=2000,
-#   tubes={}, 
-#   teleporters={}, 
-#   pods={}, 
-#   landing_pads={
-#       0: LandingPod(module_type=0, building_id=0, x=80, y=60, total_astronauts=30, astronauts={1: 15, 2: 15})
-#   }, 
-#   modules={
-#       1: Module(module_type=1, building_id=1, x=40, y=30), 
-#       2: Module(module_type=2, building_id=2, x=120, y=30)
-#   }, 
-#   buildings_by_coords={
-#       (80, 60): LandingPod(module_type=0, building_id=0, x=80, y=60, total_astronauts=30, astronauts={1: 15, 2: 15}), 
-#       (40, 30): Module(module_type=1, building_id=1, x=40, y=30), 
-#       (120, 30): Module(module_type=2, building_id=2, x=120, y=30)
-#   }
-# ) 
-
-# City(
-#     resources=1000, 
-#     tubes={
-#         (0, 1): Tube(building_1_id=0, building_2_id=1, capacity=1), 
-#         (1, 0): Tube(building_1_id=0, building_2_id=1, capacity=1), 
-#         (0, 2): Tube(building_1_id=0, building_2_id=2, capacity=1), 
-#         (2, 0): Tube(building_1_id=0, building_2_id=2, capacity=1)
-#     }, 
-#     teleporters={}, 
-#     pods={
-#         42: Pod(pod_id=42, stops=[0, 1, 0, 2, 0, 1, 0, 2])
-#     }, 
-#     landing_pads={
-#         0: LandingPod(module_type=0, building_id=0, x=80, y=60, total_astronauts=30, astronauts={1: 15, 2: 15})
-#     }, 
-#     modules={
-#         1: Module(module_type=1, building_id=1, x=40, y=30), 
-#         2: Module(module_type=2, building_id=2, x=120, y=30)
-#     }, 
-#     buildings_by_coords={
-#         (80, 60): LandingPod(module_type=0, building_id=0, x=80, y=60, total_astronauts=30, astronauts={1: 15, 2: 15}), 
-#         (40, 30): Module(module_type=1, building_id=1, x=40, y=30), 
-#         (120, 30): Module(module_type=2, building_id=2, x=120, y=30)
-#     }
-# ) 
-
+# TUBE | UPGRADE | TELEPORT | POD | DESTROY | WAIT
 def turn(city: "City"):
-    debug(city)
-    debug("0 -> 1", city.can_build_tube(0, 1))
-    debug("0 -> 2", city.can_build_tube(0, 2))
-    debug("1 -> 2", city.can_build_tube(1, 2))
-    if 3 in city.buildings:
-        debug("0 -> 3", city.can_build_tube(0, 3))
-        debug("1 -> 3", city.can_build_tube(1, 3))
-        debug("2 -> 3", city.can_build_tube(2, 3))
-
-    return "TUBE 0 1;TUBE 0 2;POD 42 0 1 0 2 0 1 0 2"
+    debug("2 -> 4", city.can_build_tube(2, 4))
+    return "TUBE 2 4"
 
 def dist_sq(x1: int, y1: int, x2: int, y2: int) -> int:
     return (x2 - x1) ** 2 + (y2 - y1) ** 2
 
 def dist(x1: int, y1: int, x2: int, y2: int) -> float:
     return math.sqrt(dist_sq(x1, y1, x2, y2))
+
+def segment_intervals(x1: int, y1: int, x2: int, y2: int):
+    dx = x2 - x1
+    dy = y2 - y1
+    num_steps = math.gcd(dx, dy)
+    x_step = dx // num_steps
+    y_step = dy // num_steps
+    for i in range(0, num_steps - 1):
+        x1 += x_step
+        y1 += y_step
+        yield x1, y1
 
 def orientation(x1: int, y1: int, x2: int, y2: int, x3: int, y3: int):
     prod = (y3-y1) * (x2-x1) - (y2-y1) * (x3-x1)
@@ -170,17 +131,8 @@ class City:
 
         x1, y1 = building_1.x, building_1.y
         x2, y2 = building_2.x, building_2.y
-        dx = x2 - x1
-        dy = y2 - y1
-        gcd = math.gcd(dx, dy)
-        debug(x1, y1, x2, y2, gcd)
-        step_x = x1
-        step_y = y1
-        for step in range(dx // gcd - 1):
-            step_x += dx * gcd
-            step_y += dy * gcd
-
-            if (step_x, step_y) in self.buildings_by_coords:
+        for sx, sy in segment_intervals(x1, y1, x2, y2):
+            if (sx, sy) in self.buildings_by_coords:
                 # There is a building at this coord
                 return False
 
@@ -198,13 +150,20 @@ class City:
         # No reason why we couldn't build this tube!
         return True
 
+
+def read():
+    line = input()
+    if ECHO_INPUT:
+        debug(line)
+    return line
+
 # game loop
 landing_pads = {}
 modules = {}
 buildings = {}
 buildings_by_coords = {}
 while True:
-    resources = int(input())
+    resources = int(read())
     city = City(resources)
     city.landing_pads = landing_pads
     city.modules = modules
@@ -219,9 +178,9 @@ while True:
 
     # buildings_by_coords: dict[tuple[int, int], LandingPod | Module] = {}
 
-    num_travel_routes = int(input())
+    num_travel_routes = int(read())
     for i in range(num_travel_routes):
-        building_1_id, building_2_id, capacity = [int(j) for j in input().split()]
+        building_1_id, building_2_id, capacity = [int(j) for j in read().split()]
         if capacity == 0:
             teleporter = Teleporter(building_1_id, building_2_id)
             city.teleporters[(building_1_id, building_2_id)] = teleporter
@@ -246,15 +205,15 @@ while True:
                 city.tubes_by_building[building_2_id] = []
             city.tubes_by_building[building_2_id].append(tube)
 
-    num_pods = int(input())
+    num_pods = int(read())
     for i in range(num_pods):
-        pod_id, number_of_stops, *stops = [int(j) for j in input().split()]
+        pod_id, number_of_stops, *stops = [int(j) for j in read().split()]
         pod = Pod(pod_id, stops)
         city.pods[pod_id] = pod
 
-    num_new_buildings = int(input())
+    num_new_buildings = int(read())
     for i in range(num_new_buildings):
-        module_type, *building_attributes = [int(j) for j in input().split()]
+        module_type, *building_attributes = [int(j) for j in read().split()]
         if module_type == 0:
             building_id, x, y, total_astronauts, *astronaut_types = building_attributes
             astronauts: dict[int, int] = {}
@@ -273,10 +232,7 @@ while True:
             city.buildings[building_id] = module
             city.buildings_by_coords[(x, y)] = module
 
-    # Write an action using print
-    # To debug: print("Debug messages...", file=sys.stderr, flush=True)
 
-    # TUBE | UPGRADE | TELEPORT | POD | DESTROY | WAIT
     start_time = time.time()
     output = turn(city)
     end_time = time.time()

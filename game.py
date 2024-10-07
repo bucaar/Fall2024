@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 import sys
 import math
 import time
+from collections import deque
 
 ECHO_INPUT = False
 
@@ -24,14 +25,11 @@ BALANCING_SCORE = 50
 
 # TUBE | UPGRADE | TELEPORT | POD | DESTROY | WAIT
 def turn(city: "City"):
-    debug("tube 0->1", city.can_build_tube(0, 1))
-    debug("tube 1->0", city.can_build_tube(1, 0))
-    debug("tube 1->2", city.can_build_tube(1, 2))
-    tube_action(0, 1)
-    debug("teleporter 0->1", city.can_build_teleporter(0, 1))
-    debug("teleporter 1->0", city.can_build_teleporter(1, 0))
-    debug("teleporter 1->2", city.can_build_teleporter(1, 2))
     teleport_action(0, 1)
+    tube_action(1, 2)
+
+    debug("Path from 0->2?", city.path_exists(0, 2))
+    debug("Path from 2->0?", city.path_exists(2, 0))
 
 def tube_action(building_1_id: int, building_2_id: int):
     turn_actions.append(f"TUBE {building_1_id} {building_2_id}")
@@ -199,6 +197,50 @@ class City:
 
         # No reason why we couldn't build this teleporter!
         return True
+    
+    def path_exists(self, building_1_id: int, building_2_id: int) -> bool:
+        if building_1_id == building_2_id:
+            # You're already there
+            return True
+        
+        building_map: dict[int, int] = {}
+        to_visit: deque[int] = deque([building_1_id])
+
+        while to_visit:
+            building_id = to_visit.popleft()
+            # Just make sure this is a valid building..
+            building = self.buildings[building_id]
+
+            if building_id in self.teleporters_by_building:
+                for teleporter in self.teleporters_by_building[building_id]:
+                    # Teleporters are directional: 1 -> 2 only
+                    if teleporter.building_1_id == building_id:
+                        if teleporter.building_2_id not in building_map:
+                            to_visit.append(teleporter.building_2_id)
+                            building_map[teleporter.building_2_id] = building_id
+                
+            if building_id in self.tubes_by_building:
+                for tube in self.tubes_by_building[building_id]:
+                    # Tubes go in both directions
+                    # But the tube has a defined 1 -> 2
+                    # This building could be either one
+                    if tube.building_1_id == building_id:
+                        if tube.building_2_id not in building_map:
+                            to_visit.append(tube.building_2_id)
+                            building_map[tube.building_2_id] = building_id
+                    elif tube.building_2_id == building_id:
+                        if tube.building_1_id not in building_map:
+                            to_visit.append(tube.building_1_id)
+                            building_map[tube.building_1_id] = building_id
+                    else:
+                        raise RuntimeError("Should be building 1 or 2?")
+                    
+            if building_2_id in building_map:
+                # TODO: Do we care about the actual path? That kinda depends on the pods and astronauts?
+                return True
+        
+        # We explored every path, did not find a way to get to building 2 :(
+        return False
 
 def read():
     line = input()

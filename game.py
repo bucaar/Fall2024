@@ -3,8 +3,9 @@ import sys
 import math
 import time
 from collections import deque
+import random
 
-ECHO_INPUT = False
+ECHO_INPUT = True
 
 MONTHS = 20
 DAYS_PER_MONTH = 20
@@ -23,13 +24,159 @@ MODULE_TYPES = 20
 SPEED_SCORE = 50
 BALANCING_SCORE = 50
 
+# 0 tubes
+#  Total cost 0 
+#  Total astronauts 0 
+
+# 0-1
+#  Total cost 500 
+#  Total astronauts 15 
+#    Tube (0, 1) {'cost': 500, 'paths': 1, 'astronauts': 15} 
+
+# 1-2
+#  Total cost 800 
+#  Total astronauts 0 
+#    Tube (1, 2) {'cost': 800, 'paths': 0, 'astronauts': 0} 
+
+# 0-1 0-2
+#  Total cost 1000 
+#  Total astronauts 30 
+#    Tube (0, 1) {'cost': 500, 'paths': 1, 'astronauts': 15} 
+#    Tube (0, 2) {'cost': 500, 'paths': 1, 'astronauts': 15} 
+
+# 0-1 1-2
+#  Total cost 1300 
+#  Total astronauts 30 
+#    Tube (0, 1) {'cost': 500, 'paths': 2, 'astronauts': 30} 
+#    Tube (1, 2) {'cost': 800, 'paths': 1, 'astronauts': 15} 
+
+# 0-1 0-2 1-2
+#  Total cost 1800 
+#  Total astronauts 30 
+#    Tube (0, 1) {'cost': 500, 'paths': 1, 'astronauts': 15} 
+#    Tube (0, 2) {'cost': 500, 'paths': 1, 'astronauts': 15} 
+#    Tube (1, 2) {'cost': 800, 'paths': 0, 'astronauts': 0} 
+
 # TUBE | UPGRADE | TELEPORT | POD | DESTROY | WAIT
 def turn(city: "City"):
-    teleport_action(0, 1)
-    tube_action(1, 2)
+    current_score_per_tube, current_cost, current_astronauts = city.get_connected_score()
 
-    debug("Path from 0->2?", city.path_exists(0, 2))
-    debug("Path from 2->0?", city.path_exists(2, 0))
+    origin_buildings_set: set[int] = set()
+    origin_buildings_set.update(city.landing_pads.keys())
+    origin_buildings_set.update(city.tubes_by_building.keys())
+    origin_buildings: list[int] = list(origin_buildings_set)
+
+    candidates: list[tuple[list[tuple[int, int]], int, int, int]] = []
+    genetic_algo(city, [], origin_buildings, city.resources, current_cost, current_astronauts, {}, candidates)
+
+    debug("Candidates")
+    for candidate in candidates:
+        debug("  ", candidate)
+
+    # best_candidates = [{
+    #     "origin": candidate[0][0],
+    #     "dest": candidate[0][1],
+    #     "cost": candidate[1][0],
+    #     "astronauts": candidate[1][1],
+    #     "cost_per_astronaut": 0 if candidate[1][1] == 0 else candidate[1][0] / candidate[1][1]
+    # } for candidate in candidates.items()]
+    # best_candidates.sort(key=lambda x: (x["cost_per_astronaut"]), reverse=True)
+    # debug("Candidates", best_candidates)
+
+    # if best_candidates:
+    #     tube_action(best_candidates[0]["origin"], best_candidates[0]["dest"])
+
+    # if (3, 5) in impossible_tubes:
+    #     debug("Impossible 3->5")
+
+    # score_per_tube, total_cost, total_astronauts = city.get_connected_score()
+    # debug("Total cost", total_cost)
+    # debug("Total astronauts", total_astronauts)
+    # for tube, score in score_per_tube.items():
+    #     debug("  Tube", tube, score)
+
+def genetic_algo(
+    city: "City", 
+    tubes: list[tuple[int, int]], 
+    origins: list[int], 
+    resources: int,
+    previous_cost: int,
+    previous_astronauts: int,
+    impossible_tubes: set[tuple[int, int]],
+    candidates: list[tuple[list[tuple[int, int]], int, int, int]]):
+
+    this_checked: set[tuple[int, int]] = set()
+    this_impossible: set[tuple[int, int]] = set(impossible_tubes)
+    for _ in range(3):
+        if not origins:
+            return
+        
+        origin = random.choice(origins)
+        dest_buildings: list[int] = [dest for dest in city.buildings.keys() if origin != dest and (origin, dest) not in impossible_tubes and (origin, dest) not in this_checked]
+        for _ in range(3):
+            if not dest_buildings:
+                # No possible destinations
+                break
+
+            dest = random.choice(dest_buildings)
+            dest_buildings.remove(dest)
+
+            if (origin, dest) in this_checked: 
+                # Already evaluated this one
+                continue
+            this_checked.add((origin, dest))
+            this_checked.add((dest, origin))
+
+            if not city.can_build_tube(origin, dest):
+                # Invalid tube
+                this_impossible.add((origin, dest))
+                this_impossible.add((dest, origin))
+                continue
+
+            origin_building = city.buildings[origin]
+            dest_building = city.buildings[dest]
+            tube_cost = get_tube_cost(origin_building.x, origin_building.y, dest_building.x, dest_building.y)
+            if tube_cost > resources:
+                # Cannot afford this tube
+                this_impossible.add((origin, dest))
+                this_impossible.add((dest, origin))
+                continue
+
+            # Build the tube and recurse
+            city.build_tube(origin, dest)
+            resources -= tube_cost
+            score_per_tube, total_cost, total_astronauts = city.get_connected_score()
+            new_tubes = tubes + [(origin, dest)]
+            new_origins = list(set(origins + [origin, dest]))
+            
+            candidates.append(
+                (
+                    new_tubes,
+                    total_cost,
+                    total_astronauts,
+                    resources
+                )
+            )
+
+            genetic_algo(city, new_tubes, new_origins, resources, total_cost, total_astronauts, this_impossible, candidates)
+
+            city.remove_tube(origin, dest)
+            resources += tube_cost
+
+    if len(candidates) > 20:
+        candidates.sort(key=lambda x: 0 if x[2] == 0 else x[1] / x[2], reverse=True)
+        keep = candidates[0:20]
+        candidates.clear()
+        candidates.extend(keep)
+
+next_pod_id = 0
+def get_next_pod_id():
+    global next_pod_id
+    next_pod_id += 1
+    if next_pod_id > 500:
+        # TODO: Consider re-using old ones?
+        raise RuntimeError("Too many pods!")
+    return next_pod_id
 
 def tube_action(building_1_id: int, building_2_id: int):
     turn_actions.append(f"TUBE {building_1_id} {building_2_id}")
@@ -41,7 +188,7 @@ def teleport_action(building_entrance_id: int, building_exit_id: int):
     turn_actions.append(f"TELEPORT {building_entrance_id} {building_exit_id}")
 
 def pod_action(pod_id: int, *building_ids: int):
-    buildings = " ".join(building_ids)
+    buildings = " ".join([str(building_id) for building_id in building_ids])
     turn_actions.append(f"POD {pod_id} {buildings}")
 
 def destroy_action(pod_id: int):
@@ -79,9 +226,15 @@ def segments_intersect(x1: int, y1: int, x2: int, y2: int, x3: int, y3: int, x4:
     return orientation(x1, y1, x2, y2, x3, y3) * orientation(x1, y1, x2, y2, x4, y4) < 0 and \
         orientation(x3, y3, x4, y4, x1, y1) * orientation(x3, y3, x4, y4, x2, y2) < 0
 
-def get_tube_cost(x1: int, y1: int, x2: int, y2: int, capacity: int) -> int:
+def get_tube_cost(x1: int, y1: int, x2: int, y2: int, capacity: int = 1) -> int:
     tube_dist = dist(x1, y1, x2, y2)
     return math.floor(tube_dist / TUBE_COST_PER_KM) * capacity
+
+def order_ids(id_1: int, id_2: int):
+    if id_1 > id_2:
+        id_1, id_2 = id_2, id_1
+
+    return (id_1, id_2)
 
 def debug(*args):
     for arg in args + ("\n",):
@@ -198,13 +351,106 @@ class City:
         # No reason why we couldn't build this teleporter!
         return True
     
-    def path_exists(self, building_1_id: int, building_2_id: int) -> bool:
-        if building_1_id == building_2_id:
-            # You're already there
-            return True
+    def build_tube(self, building_1_id: int, building_2_id: int, capacity: int = 1):
+        tube = Tube(building_1_id, building_2_id, capacity)
+        city.tubes[(building_1_id, building_2_id)] = tube
+        city.tubes[(building_2_id, building_1_id)] = tube
+
+        if building_1_id not in city.tubes_by_building:
+            city.tubes_by_building[building_1_id] = []
+        city.tubes_by_building[building_1_id].append(tube)
+
+        if building_2_id not in city.tubes_by_building:
+            city.tubes_by_building[building_2_id] = []
+        city.tubes_by_building[building_2_id].append(tube)
+
+    def upgrade_tube(self, building_1_id: int, building_2_id: int, capacity: int = 1):
+        city.tubes[(building_1_id, building_2_id)].capacity = capacity
+
+    def remove_tube(self, building_1_id: int, building_2_id: int):
+        tube = city.tubes[(building_1_id, building_2_id)]
+        del city.tubes[(building_1_id, building_2_id)]
+        del city.tubes[(building_2_id, building_1_id)]
+
+        city.tubes_by_building[building_1_id].remove(tube)
+        city.tubes_by_building[building_2_id].remove(tube)
+
+    def build_teleporter(self, building_1_id: int, building_2_id: int):
+        teleporter = Teleporter(building_1_id, building_2_id)
+        city.teleporters[(building_1_id, building_2_id)] = teleporter
+
+        if building_1_id not in city.teleporters_by_building:
+            city.teleporters_by_building[building_1_id] = []
+        city.teleporters_by_building[building_1_id].append(teleporter)
         
-        building_map: dict[int, int] = {}
-        to_visit: deque[int] = deque([building_1_id])
+        if building_2_id not in city.teleporters_by_building:
+            city.teleporters_by_building[building_2_id] = []
+        city.teleporters_by_building[building_2_id].append(teleporter)
+
+    def remove_teleporter(self, building_1_id: int, building_2_id: int):
+        teleporter = city.teleporters[(building_1_id, building_2_id)]
+        del city.teleporters[(building_1_id, building_2_id)]
+
+        city.teleporters_by_building[building_1_id].remove(teleporter)
+        city.teleporters_by_building[building_2_id].remove(teleporter)
+
+    def get_connected_score(self):
+        score_per_tube = {}
+        total_cost = 0
+        total_astronauts = 0
+
+        for landing_pad in self.landing_pads.values():
+            connections = self.get_connected_buildings(landing_pad.building_id)
+            for building_id in connections:
+                if building_id not in self.modules:
+                    # If this isn't a module, don't score it
+                    continue
+
+                module = self.modules[building_id]
+                if module.module_type not in landing_pad.astronauts:
+                    # If this landing pad -> module doesn't get astronauts there, don't score it
+                    continue
+
+                while building_id in connections:
+                    (previous_id, dist, method) = connections[building_id]
+                    if method == "tube":
+                        pair = order_ids(building_id, previous_id)
+                        if pair not in score_per_tube:
+                            building_1 = self.buildings[pair[0]]
+                            building_2 = self.buildings[pair[1]]
+                            tube_cost = get_tube_cost(building_1.x, building_1.y, building_2.x, building_2.y)
+                            total_cost += tube_cost
+                            total_astronauts += landing_pad.astronauts[module.module_type]
+                            score_per_tube[pair] = {
+                                "cost": tube_cost,
+                                "paths": 0,
+                                "astronauts": 0
+                            }
+
+                        score_per_tube[pair]["paths"] += 1
+                        score_per_tube[pair]["astronauts"] += landing_pad.astronauts[module.module_type]
+                    
+                    building_id = previous_id
+
+        # Check for unused tubes
+        for tube in city.tubes:
+            pair = order_ids(tube[0], tube[1])
+            if pair not in score_per_tube:
+                building_1 = self.buildings[pair[0]]
+                building_2 = self.buildings[pair[1]]
+                tube_cost = get_tube_cost(building_1.x, building_1.y, building_2.x, building_2.y)
+                total_cost += tube_cost
+                score_per_tube[pair] = {
+                    "cost": tube_cost,
+                    "paths": 0,
+                    "astronauts": 0
+                }
+
+        return score_per_tube, total_cost, total_astronauts
+
+    def get_connected_buildings(self, start_building_id: int):
+        to_visit: deque[int] = deque([start_building_id])
+        distance_map: dict[int, tuple[int, int, str]] = {start_building_id: (0, 0, "")}
 
         while to_visit:
             building_id = to_visit.popleft()
@@ -215,31 +461,43 @@ class City:
                 for teleporter in self.teleporters_by_building[building_id]:
                     # Teleporters are directional: 1 -> 2 only
                     if teleporter.building_1_id == building_id:
-                        if teleporter.building_2_id not in building_map:
+                        # Teleporters are 'free', so it would have the same dist
+                        teleporter_dist = distance_map[building_id][1]
+                        if teleporter.building_2_id not in distance_map or distance_map[teleporter.building_2_id][1] > teleporter_dist:
                             to_visit.append(teleporter.building_2_id)
-                            building_map[teleporter.building_2_id] = building_id
-                
+                            distance_map[teleporter.building_2_id] = (building_id, teleporter_dist, "tele")
+
             if building_id in self.tubes_by_building:
                 for tube in self.tubes_by_building[building_id]:
                     # Tubes go in both directions
                     # But the tube has a defined 1 -> 2
                     # This building could be either one
                     if tube.building_1_id == building_id:
-                        if tube.building_2_id not in building_map:
-                            to_visit.append(tube.building_2_id)
-                            building_map[tube.building_2_id] = building_id
+                        other_building_id = tube.building_2_id
                     elif tube.building_2_id == building_id:
-                        if tube.building_1_id not in building_map:
-                            to_visit.append(tube.building_1_id)
-                            building_map[tube.building_1_id] = building_id
+                        other_building_id = tube.building_1_id
                     else:
                         raise RuntimeError("Should be building 1 or 2?")
                     
-            if building_2_id in building_map:
-                # TODO: Do we care about the actual path? That kinda depends on the pods and astronauts?
-                return True
+                    tube_dist = distance_map[building_id][1] + 1
+                    if other_building_id not in distance_map or distance_map[other_building_id][1] > tube_dist:
+                        to_visit.append(other_building_id)
+                        distance_map[other_building_id] = (building_id, tube_dist, "tube")
+
+        # Remove the self connection
+        distance_map.pop(start_building_id)
+
+        return distance_map
+
+    def path_exists(self, building_1_id: int, building_2_id: int) -> bool:
+        if building_1_id == building_2_id:
+            # You're already there
+            return True
         
-        # We explored every path, did not find a way to get to building 2 :(
+        connections = self.get_connected_buildings(building_1_id)
+        if building_2_id in connections:
+            return True
+        
         return False
 
 def read():
@@ -257,8 +515,8 @@ buildings_by_x: dict[int, list[LandingPod | Module]] = {}
 buildings_by_y: dict[int, list[LandingPod | Module]] = {}
 turn_actions: list[str] = []
 while True:
-    start_time = time.time()
     resources = int(read())
+    start_time = time.time()
     city = City(resources)
     city.landing_pads = landing_pads
     city.modules = modules
@@ -271,28 +529,9 @@ while True:
     for i in range(num_travel_routes):
         building_1_id, building_2_id, capacity = [int(j) for j in read().split()]
         if capacity == 0:
-            teleporter = Teleporter(building_1_id, building_2_id)
-            city.teleporters[(building_1_id, building_2_id)] = teleporter
-
-            if building_1_id not in city.teleporters_by_building:
-                city.teleporters_by_building[building_1_id] = []
-            city.teleporters_by_building[building_1_id].append(teleporter)
-            
-            if building_2_id not in city.teleporters_by_building:
-                city.teleporters_by_building[building_2_id] = []
-            city.teleporters_by_building[building_2_id].append(teleporter)
+            city.build_teleporter(building_1_id, building_2_id)
         else: 
-            tube = Tube(building_1_id, building_2_id, capacity)
-            city.tubes[(building_1_id, building_2_id)] = tube
-            city.tubes[(building_2_id, building_1_id)] = tube
-
-            if building_1_id not in city.tubes_by_building:
-                city.tubes_by_building[building_1_id] = []
-            city.tubes_by_building[building_1_id].append(tube)
-
-            if building_2_id not in city.tubes_by_building:
-                city.tubes_by_building[building_2_id] = []
-            city.tubes_by_building[building_2_id].append(tube)
+            city.build_tube(building_1_id, building_2_id, capacity)
 
     num_pods = int(read())
     for i in range(num_pods):
@@ -339,6 +578,8 @@ while True:
     turn(city)
     end_time = time.time()
 
+    if not turn_actions:
+        wait_action()
     output = ";".join(turn_actions)
     turn_actions.clear()
 
